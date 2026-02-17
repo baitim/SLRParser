@@ -4,14 +4,18 @@ set(INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # --------------- Common ---------------
 
+set(COMMON_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/Common)
+
 flex_target(lexer
-    lexer.l
+    ${COMMON_LIB_DIR}/lexer.l
     ${CMAKE_CURRENT_BINARY_DIR}/lexer.cpp
 )
 
-set(COMMON_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/Common)
 add_library(Common STATIC
-    ${COMMON_LIB_DIR}/Common.cpp
+    ${COMMON_LIB_DIR}/Grammar.cpp
+    ${COMMON_LIB_DIR}/Lexer.cpp
+    ${COMMON_LIB_DIR}/LR0Items.cpp
+    ${COMMON_LIB_DIR}/Parser.cpp
     ${FLEX_lexer_OUTPUTS}
 )
 target_include_directories(Common PUBLIC

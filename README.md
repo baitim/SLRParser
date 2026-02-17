@@ -34,6 +34,18 @@
 * Run testing <br>
     <code>ctest --test-dir build/Release --output-on-failure</code>
 
+## Grammar
+
+<code>
+    program        -> statements <br>
+    statements     -> statements statement | statements; | empty <br>
+    statement      -> expression_pls; <br>
+    expression_pls -> expression_pls bin_oper_pls expression_mul | expression_mul <br>
+    expression_mul -> expression_mul bin_oper_mul terminal       | terminal <br>
+    terminal       -> ( expression ) | number | variable <br>
+    variable       -> id
+</code>
+
 <p align="center"><img src="https://github.com/baitim/SLRParser/blob/main/images/cat.gif" width="50%"></p>
 
 ## Support
