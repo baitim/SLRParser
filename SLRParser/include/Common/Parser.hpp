@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Error.hpp"
 #include "Grammar.hpp"
 #include "LR0Items.hpp"
 #include "Lexer.hpp"
@@ -12,6 +13,15 @@
 #include <vector>
 
 namespace slr_parser {
+
+class ParseError : public Error {
+public:
+    ParseError(const std::string& msg) : Error(msg) {}
+    ParseError(int line, const std::string& lexeme)
+        : Error(std::format("Parse error at line {} near '{}'", line, lexeme)) {}
+    ParseError(const std::string& msg, int line, const std::string& lexeme)
+        : Error(std::format("{} at line {} near '{}'", msg, line, lexeme)) {}
+};
 
 struct Action {
     enum Type { SHIFT, REDUCE, ACCEPT, ERROR } type;

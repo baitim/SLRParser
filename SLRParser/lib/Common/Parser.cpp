@@ -107,7 +107,13 @@ bool SLRParser::parse(std::span<const Token> tokens, std::ostream& out) {
         }
         out << stack_str << "\t" << input_str << "\t" << action_str << "\n";
         if (act.type == Action::ACCEPT) return true;
-        if (act.type == Action::ERROR) throw slr_parser::ParseError("Parse error");
+        if (act.type == Action::ERROR) {
+            if (pos < tokens.size()) {
+                throw ParseError(tokens[pos].line, tokens[pos].lexeme);
+            } else {
+                throw ParseError("Unexpected end of input");
+            }
+        }
         if (act.type == Action::SHIFT) {
             state_stack.push(act.value);
             symbol_stack.push(tokens[pos].type);
