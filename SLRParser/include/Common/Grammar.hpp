@@ -8,24 +8,33 @@
 namespace slr_parser {
 
 struct Rule {
-    int lhs;
-    std::vector<int> rhs;
+    Nonterm lhs;
+    std::vector<Symbol> rhs;
 };
 
 class Grammar {
 private:
     std::vector<Rule> rules;
-    int start;
-
-private:
-    void init();
+    Nonterm start;
 
 public:
-    Grammar();
-    const std::vector<Rule>& getRules() const { return rules; }
-    int getStart() const { return start; }
-    std::map<int, std::set<int>> computeFirst() const;
-    std::vector<std::set<int>> computeFollow(const std::map<int, std::set<int>>& first) const;
+    Grammar(std::vector<Rule> r, Nonterm s);
+    const std::vector<Rule>& getRules() const;
+    Nonterm getStart() const;
+    std::map<Symbol, std::set<Term>> computeFirst() const;
+    std::vector<std::set<Term>> computeFollow(const std::map<Symbol, std::set<Term>>& first) const;
+};
+
+class GrammarBuilder {
+private:
+    std::vector<Rule> rules;
+    Nonterm start;
+
+public:
+    GrammarBuilder();
+    GrammarBuilder& addRule(Nonterm lhs, std::initializer_list<Symbol> rhs);
+    GrammarBuilder& setStart(Nonterm s);
+    Grammar build() const;
 };
 
 } // namespace slr_parser

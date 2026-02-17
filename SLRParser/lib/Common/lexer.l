@@ -5,11 +5,15 @@
 #include "Common/Terminals.hpp"
 #define YY_USER_ACTION lexeme = yytext;
 %}
+
+NUMBER [1-9][0-9]*|0
+ID     [a-zA-Z]+
+
 %%
 [ \t\v]+
 [\n]              { line++; }
-[0-9]+            { return static_cast<int>(Term::NUMBER); }
-[a-zA-Z]+         { return static_cast<int>(Term::ID); }
+{NUMBER}          { return static_cast<int>(Term::NUMBER); }
+{ID}              { return static_cast<int>(Term::ID); }
 "+"               { return static_cast<int>(Term::PLUS); }
 "-"               { return static_cast<int>(Term::MINUS); }
 "*"               { return static_cast<int>(Term::MUL); }

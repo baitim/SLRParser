@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <variant>
 
 namespace slr_parser {
 
@@ -8,7 +9,7 @@ enum class Term {
     END, ID, NUMBER, PLUS, MINUS, MUL, DIV, LPAREN, RPAREN, SEMICOLON, TERM_COUNT
 };
 
-inline std::string term_to_string(Term t) {
+constexpr std::string_view term_to_string(Term t) {
     switch (t) {
         case Term::END: return "$";
         case Term::ID: return "id";
@@ -28,7 +29,7 @@ enum class Nonterm {
     GOAL, PROGRAM, STATEMENTS, STATEMENT, EXPR_PLS, EXPR_MUL, TERMINAL, VARIABLE, NONTERM_COUNT
 };
 
-inline std::string nonterm_to_string(Nonterm n) {
+constexpr std::string_view nonterm_to_string(Nonterm n) {
     switch (n) {
         case Nonterm::GOAL: return "S'";
         case Nonterm::PROGRAM: return "program";
@@ -42,14 +43,19 @@ inline std::string nonterm_to_string(Nonterm n) {
     }
 }
 
-const int TERM_BASE = 0;
-const int NONTERM_BASE = static_cast<int>(Term::TERM_COUNT);
+using Symbol = std::variant<Term, Nonterm>;
 
-inline bool is_term(int sym) { return sym < NONTERM_BASE; }
-inline bool is_nonterm(int sym) { return sym >= NONTERM_BASE; }
-inline int term_to_int(Term t) { return static_cast<int>(t); }
-inline int nonterm_to_int(Nonterm n) { return NONTERM_BASE + static_cast<int>(n); }
-inline Term int_to_term(int sym) { return static_cast<Term>(sym); }
-inline Nonterm int_to_nonterm(int sym) { return static_cast<Nonterm>(sym - NONTERM_BASE); }
+inline bool is_term(const Symbol& s) { return std::holds_alternative<Term>(s); }
+inline bool is_nonterm(const Symbol& s) { return std::holds_alternative<Nonterm>(s); }
+inline Term as_term(const Symbol& s) { return std::get<Term>(s); }
+inline Nonterm as_nonterm(const Symbol& s) { return std::get<Nonterm>(s); }
+
+inline std::string symbol_to_string(const Symbol& s) {
+    if (is_term(s)) return std::string(term_to_string(as_term(s)));
+    return std::string(nonterm_to_string(as_nonterm(s)));
+}
+
+inline int nonterm_to_index(Nonterm n) { return static_cast<int>(n); }
+inline int term_to_index(Term t) { return static_cast<int>(t); }
 
 } // namespace slr_parser

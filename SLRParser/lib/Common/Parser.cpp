@@ -1,4 +1,6 @@
 #include "Common/Parser.hpp"
+#include "Common/Error.hpp"
+#include <format>
 #include <iostream>
 #include <sstream>
 #include <stack>
@@ -6,17 +8,17 @@
 
 namespace slr_parser {
 
-SLRParser::SLRParser(const Grammar& g, const LR0Automaton& automaton, const std::vector<std::set<int>>& follow)
+SLRParser::SLRParser(const Grammar& g, const LR0Automaton& automaton, const std::vector<std::set<Term>>& follow)
     : grammar(g) {
     buildTables(automaton, follow);
 }
 
-void SLRParser::buildTables(const LR0Automaton& automaton, const std::vector<std::set<int>>& follow) {
+void SLRParser::buildTables(const LR0Automaton& automaton, const std::vector<std::set<Term>>& follow) {
     int numStates = automaton.getStates().size();
     int numTerms = static_cast<int>(Term::TERM_COUNT);
     int numNonterms = static_cast<int>(Nonterm::NONTERM_COUNT);
     actionTable.resize(numStates, std::vector<Action>(numTerms, {Action::ERROR, 0}));
-    gotoTable.resize(numStates, std::vector<int>(numNonterms, -1));
+    gotoTable.resize(numStates, std::vector<std::optional<int>>(numNonterms, std::nullopt));
 
     const auto& states = automaton.getStates();
     const auto& trans = automaton.getTransitions();
@@ -24,13 +26,11 @@ void SLRParser::buildTables(const LR0Automaton& automaton, const std::vector<std
     for (int i = 0; i < numStates; ++i) {
         auto it_state = trans.find(i);
         if (it_state != trans.end()) {
-            for (const auto& p : it_state->second) {
-                int sym = p.first;
+            for (const auto& [sym, next] : it_state->second) {
                 if (is_term(sym)) {
-                    actionTable[i][sym] = {Action::SHIFT, p.second};
+                    actionTable[i][term_to_index(as_term(sym))] = {Action::SHIFT, next};
                 } else {
-                    int nonterm = sym - NONTERM_BASE;
-                    gotoTable[i][nonterm] = p.second;
+                    gotoTable[i][nonterm_to_index(as_nonterm(sym))] = next;
                 }
             }
         }
@@ -38,12 +38,13 @@ void SLRParser::buildTables(const LR0Automaton& automaton, const std::vector<std
             const Rule& rule = grammar.getRules()[item.rule_idx];
             if (item.dot == static_cast<int>(rule.rhs.size())) {
                 if (rule.lhs == grammar.getStart()) {
-                    actionTable[i][term_to_int(Term::END)] = {Action::ACCEPT, 0};
+                    actionTable[i][term_to_index(Term::END)] = {Action::ACCEPT, 0};
                 } else {
-                    int lhs_idx = rule.lhs - NONTERM_BASE;
-                    for (int t : follow[lhs_idx]) {
-                        if (actionTable[i][t].type == Action::ERROR) {
-                            actionTable[i][t] = {Action::REDUCE, item.rule_idx};
+                    int lhs_idx = nonterm_to_index(rule.lhs);
+                    for (Term t : follow[lhs_idx]) {
+                        int t_idx = term_to_index(t);
+                        if (actionTable[i][t_idx].type == Action::ERROR) {
+                            actionTable[i][t_idx] = {Action::REDUCE, item.rule_idx};
                         }
                     }
                 }
@@ -53,31 +54,30 @@ void SLRParser::buildTables(const LR0Automaton& automaton, const std::vector<std
 }
 
 std::string SLRParser::ruleToString(const Rule& r) const {
-    std::string lhs = nonterm_to_string(int_to_nonterm(r.lhs));
+    std::string lhs(nonterm_to_string(r.lhs));
     std::string rhs;
-    for (int sym : r.rhs) {
-        if (is_term(sym)) rhs += term_to_string(int_to_term(sym));
-        else rhs += nonterm_to_string(int_to_nonterm(sym));
+    for (const auto& sym : r.rhs) {
+        rhs += symbol_to_string(sym);
     }
-    return lhs + "->" + rhs;
+    return std::format("{}->{}", lhs, rhs);
 }
 
-bool SLRParser::parse(const std::vector<Token>& tokens, std::ostream& out) {
+bool SLRParser::parse(std::span<const Token> tokens, std::ostream& out) {
     std::stack<int> state_stack;
-    std::stack<std::string> symbol_stack;
+    std::stack<Symbol> symbol_stack;
     state_stack.push(0);
     size_t pos = 0;
     out << "STACK\tINPUT\tACTION\n";
     while (true) {
         Term current_term = (pos < tokens.size()) ? tokens[pos].type : Term::END;
-        int cur_tok = term_to_int(current_term);
+        int cur_tok = term_to_index(current_term);
         int state = state_stack.top();
         Action act = actionTable[state][cur_tok];
         std::string stack_str;
-        std::stack<std::string> temp = symbol_stack;
+        std::stack<Symbol> temp = symbol_stack;
         std::vector<std::string> syms;
         while (!temp.empty()) {
-            syms.push_back(temp.top());
+            syms.push_back(symbol_to_string(temp.top()));
             temp.pop();
         }
         for (auto it = syms.rbegin(); it != syms.rend(); ++it) {
@@ -107,10 +107,10 @@ bool SLRParser::parse(const std::vector<Token>& tokens, std::ostream& out) {
         }
         out << stack_str << "\t" << input_str << "\t" << action_str << "\n";
         if (act.type == Action::ACCEPT) return true;
-        if (act.type == Action::ERROR) return false;
+        if (act.type == Action::ERROR) throw slr_parser::ParseError("Parse error");
         if (act.type == Action::SHIFT) {
             state_stack.push(act.value);
-            symbol_stack.push(tokens[pos].lexeme);
+            symbol_stack.push(tokens[pos].type);
             ++pos;
         } else if (act.type == Action::REDUCE) {
             const Rule& r = grammar.getRules()[act.value];
@@ -119,11 +119,12 @@ bool SLRParser::parse(const std::vector<Token>& tokens, std::ostream& out) {
                 state_stack.pop();
                 symbol_stack.pop();
             }
-            int new_state = gotoTable[state_stack.top()][r.lhs - NONTERM_BASE];
+            int new_state = *gotoTable[state_stack.top()][nonterm_to_index(r.lhs)];
             state_stack.push(new_state);
-            symbol_stack.push(nonterm_to_string(int_to_nonterm(r.lhs)));
+            symbol_stack.push(r.lhs);
         }
     }
+    return false;
 }
 
 bool parse_program(const std::string& input, std::ostream& out) {
@@ -135,7 +136,27 @@ bool parse_program(const std::string& input, std::ostream& out) {
         tokens.push_back(t);
         if (t.type == Term::END) break;
     }
-    Grammar grammar;
+
+    GrammarBuilder builder;
+    builder.setStart(Nonterm::GOAL)
+        .addRule(Nonterm::GOAL, {Nonterm::PROGRAM})
+        .addRule(Nonterm::PROGRAM, {Nonterm::STATEMENTS})
+        .addRule(Nonterm::STATEMENTS, {Nonterm::STATEMENTS, Nonterm::STATEMENT})
+        .addRule(Nonterm::STATEMENTS, {Nonterm::STATEMENTS, Term::SEMICOLON})
+        .addRule(Nonterm::STATEMENTS, {})
+        .addRule(Nonterm::STATEMENT, {Nonterm::EXPR_PLS, Term::SEMICOLON})
+        .addRule(Nonterm::EXPR_PLS, {Nonterm::EXPR_PLS, Term::PLUS, Nonterm::EXPR_MUL})
+        .addRule(Nonterm::EXPR_PLS, {Nonterm::EXPR_PLS, Term::MINUS, Nonterm::EXPR_MUL})
+        .addRule(Nonterm::EXPR_PLS, {Nonterm::EXPR_MUL})
+        .addRule(Nonterm::EXPR_MUL, {Nonterm::EXPR_MUL, Term::MUL, Nonterm::TERMINAL})
+        .addRule(Nonterm::EXPR_MUL, {Nonterm::EXPR_MUL, Term::DIV, Nonterm::TERMINAL})
+        .addRule(Nonterm::EXPR_MUL, {Nonterm::TERMINAL})
+        .addRule(Nonterm::TERMINAL, {Term::LPAREN, Nonterm::EXPR_PLS, Term::RPAREN})
+        .addRule(Nonterm::TERMINAL, {Term::NUMBER})
+        .addRule(Nonterm::TERMINAL, {Nonterm::VARIABLE})
+        .addRule(Nonterm::VARIABLE, {Term::ID});
+    Grammar grammar = builder.build();
+
     auto first = grammar.computeFirst();
     auto follow = grammar.computeFollow(first);
     LR0Automaton automaton(grammar);

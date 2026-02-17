@@ -24,7 +24,7 @@ private:
     int yylex() override;
 
 public:
-    Lexer(std::istream* in) : yyFlexLexer(in), line(1) {}
+    Lexer(std::istream* in);
     Token nextToken();
 };
 

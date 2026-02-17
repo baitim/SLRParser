@@ -5,49 +5,34 @@
 
 namespace slr_parser {
 
-const int EPS = -1;
+namespace {
+const Term EPS_TERM = static_cast<Term>(-1);
+const Symbol EPS = EPS_TERM;
+} // namespace
 
-Grammar::Grammar() {
-    init();
-}
+Grammar::Grammar(std::vector<Rule> r, Nonterm s) : rules(std::move(r)), start(s) {}
 
-void Grammar::init() {
-    rules.push_back({nonterm_to_int(Nonterm::GOAL), {nonterm_to_int(Nonterm::PROGRAM)}});
-    rules.push_back({nonterm_to_int(Nonterm::PROGRAM), {nonterm_to_int(Nonterm::STATEMENTS)}});
-    rules.push_back({nonterm_to_int(Nonterm::STATEMENTS), {nonterm_to_int(Nonterm::STATEMENTS), nonterm_to_int(Nonterm::STATEMENT)}});
-    rules.push_back({nonterm_to_int(Nonterm::STATEMENTS), {nonterm_to_int(Nonterm::STATEMENTS), term_to_int(Term::SEMICOLON)}});
-    rules.push_back({nonterm_to_int(Nonterm::STATEMENTS), {}});
-    rules.push_back({nonterm_to_int(Nonterm::STATEMENT), {nonterm_to_int(Nonterm::EXPR_PLS), term_to_int(Term::SEMICOLON)}});
-    rules.push_back({nonterm_to_int(Nonterm::EXPR_PLS), {nonterm_to_int(Nonterm::EXPR_PLS), term_to_int(Term::PLUS), nonterm_to_int(Nonterm::EXPR_MUL)}});
-    rules.push_back({nonterm_to_int(Nonterm::EXPR_PLS), {nonterm_to_int(Nonterm::EXPR_PLS), term_to_int(Term::MINUS), nonterm_to_int(Nonterm::EXPR_MUL)}});
-    rules.push_back({nonterm_to_int(Nonterm::EXPR_PLS), {nonterm_to_int(Nonterm::EXPR_MUL)}});
-    rules.push_back({nonterm_to_int(Nonterm::EXPR_MUL), {nonterm_to_int(Nonterm::EXPR_MUL), term_to_int(Term::MUL), nonterm_to_int(Nonterm::TERMINAL)}});
-    rules.push_back({nonterm_to_int(Nonterm::EXPR_MUL), {nonterm_to_int(Nonterm::EXPR_MUL), term_to_int(Term::DIV), nonterm_to_int(Nonterm::TERMINAL)}});
-    rules.push_back({nonterm_to_int(Nonterm::EXPR_MUL), {nonterm_to_int(Nonterm::TERMINAL)}});
-    rules.push_back({nonterm_to_int(Nonterm::TERMINAL), {term_to_int(Term::LPAREN), nonterm_to_int(Nonterm::EXPR_PLS), term_to_int(Term::RPAREN)}});
-    rules.push_back({nonterm_to_int(Nonterm::TERMINAL), {term_to_int(Term::NUMBER)}});
-    rules.push_back({nonterm_to_int(Nonterm::TERMINAL), {nonterm_to_int(Nonterm::VARIABLE)}});
-    rules.push_back({nonterm_to_int(Nonterm::VARIABLE), {term_to_int(Term::ID)}});
-    start = nonterm_to_int(Nonterm::GOAL);
-}
+const std::vector<Rule>& Grammar::getRules() const { return rules; }
+Nonterm Grammar::getStart() const { return start; }
 
-std::map<int, std::set<int>> Grammar::computeFirst() const {
-    std::map<int, std::set<int>> first;
-    std::map<int, bool> nullable;
+std::map<Symbol, std::set<Term>> Grammar::computeFirst() const {
+    std::map<Symbol, std::set<Term>> first;
+    std::map<Nonterm, bool> nullable;
 
     for (int t = 0; t < static_cast<int>(Term::TERM_COUNT); ++t) {
-        first[t].insert(t);
-        nullable[t] = false;
+        Term term = static_cast<Term>(t);
+        first[term].insert(term);
     }
-    for (int nt = NONTERM_BASE; nt < NONTERM_BASE + static_cast<int>(Nonterm::NONTERM_COUNT); ++nt) {
-        first[nt] = {};
-        nullable[nt] = false;
+    for (int nt = 0; nt < static_cast<int>(Nonterm::NONTERM_COUNT); ++nt) {
+        Nonterm nonterm = static_cast<Nonterm>(nt);
+        first[nonterm] = {};
+        nullable[nonterm] = false;
     }
 
     for (const auto& rule : rules) {
         if (rule.rhs.empty()) {
             nullable[rule.lhs] = true;
-            first[rule.lhs].insert(EPS);
+            first[rule.lhs].insert(EPS_TERM);
         }
     }
 
@@ -56,21 +41,26 @@ std::map<int, std::set<int>> Grammar::computeFirst() const {
         changed = false;
         for (const auto& rule : rules) {
             if (rule.rhs.empty()) continue;
-            int lhs = rule.lhs;
+            Nonterm lhs = rule.lhs;
             bool all_nullable = true;
-            for (int sym : rule.rhs) {
-                for (int t : first[sym]) {
-                    if (t != EPS) {
+            for (const Symbol& sym : rule.rhs) {
+                for (Term t : first[sym]) {
+                    if (t != EPS_TERM) {
                         if (first[lhs].insert(t).second) changed = true;
                     }
                 }
-                if (!nullable[sym]) {
+                if (is_nonterm(sym)) {
+                    if (!nullable[as_nonterm(sym)]) {
+                        all_nullable = false;
+                        break;
+                    }
+                } else {
                     all_nullable = false;
                     break;
                 }
             }
             if (all_nullable) {
-                if (first[lhs].insert(EPS).second) changed = true;
+                if (first[lhs].insert(EPS_TERM).second) changed = true;
                 nullable[lhs] = true;
             }
         }
@@ -79,38 +69,38 @@ std::map<int, std::set<int>> Grammar::computeFirst() const {
     return first;
 }
 
-std::vector<std::set<int>> Grammar::computeFollow(const std::map<int, std::set<int>>& first) const {
+std::vector<std::set<Term>> Grammar::computeFollow(const std::map<Symbol, std::set<Term>>& first) const {
     int numNonterms = static_cast<int>(Nonterm::NONTERM_COUNT);
-    std::vector<std::set<int>> follow(numNonterms);
-    follow[static_cast<int>(Nonterm::GOAL)].insert(term_to_int(Term::END));
+    std::vector<std::set<Term>> follow(numNonterms);
+    follow[nonterm_to_index(start)].insert(Term::END);
 
     std::vector<bool> nullable(numNonterms, false);
     for (int i = 0; i < numNonterms; ++i) {
-        int nt = NONTERM_BASE + i;
-        if (first.at(nt).count(EPS)) nullable[i] = true;
+        Nonterm nt = static_cast<Nonterm>(i);
+        if (first.at(nt).count(EPS_TERM)) nullable[i] = true;
     }
 
     bool changed;
     do {
         changed = false;
         for (const auto& rule : rules) {
-            int lhs = rule.lhs;
-            int lhs_idx = lhs - NONTERM_BASE;
+            Nonterm lhs = rule.lhs;
+            int lhs_idx = nonterm_to_index(lhs);
             for (size_t i = 0; i < rule.rhs.size(); ++i) {
-                int sym = rule.rhs[i];
+                const Symbol& sym = rule.rhs[i];
                 if (!is_nonterm(sym)) continue;
-                int sym_idx = sym - NONTERM_BASE;
+                Nonterm B = as_nonterm(sym);
+                int B_idx = nonterm_to_index(B);
 
-                std::set<int> first_beta;
+                std::set<Term> first_beta;
                 bool beta_nullable = true;
                 for (size_t j = i+1; j < rule.rhs.size(); ++j) {
-                    int b = rule.rhs[j];
-                    for (int t : first.at(b)) {
-                        if (t != EPS) first_beta.insert(t);
+                    const Symbol& b = rule.rhs[j];
+                    for (Term t : first.at(b)) {
+                        if (t != EPS_TERM) first_beta.insert(t);
                     }
                     if (is_nonterm(b)) {
-                        int b_idx = b - NONTERM_BASE;
-                        if (!nullable[b_idx]) {
+                        if (!nullable[nonterm_to_index(as_nonterm(b))]) {
                             beta_nullable = false;
                             break;
                         }
@@ -119,12 +109,12 @@ std::vector<std::set<int>> Grammar::computeFollow(const std::map<int, std::set<i
                         break;
                     }
                 }
-                for (int t : first_beta) {
-                    if (follow[sym_idx].insert(t).second) changed = true;
+                for (Term t : first_beta) {
+                    if (follow[B_idx].insert(t).second) changed = true;
                 }
                 if (beta_nullable || i+1 == rule.rhs.size()) {
-                    for (int t : follow[lhs_idx]) {
-                        if (follow[sym_idx].insert(t).second) changed = true;
+                    for (Term t : follow[lhs_idx]) {
+                        if (follow[B_idx].insert(t).second) changed = true;
                     }
                 }
             }
@@ -132,6 +122,22 @@ std::vector<std::set<int>> Grammar::computeFollow(const std::map<int, std::set<i
     } while (changed);
 
     return follow;
+}
+
+GrammarBuilder::GrammarBuilder() : start(Nonterm::GOAL) {}
+
+GrammarBuilder& GrammarBuilder::addRule(Nonterm lhs, std::initializer_list<Symbol> rhs) {
+    rules.push_back({lhs, std::vector<Symbol>(rhs)});
+    return *this;
+}
+
+GrammarBuilder& GrammarBuilder::setStart(Nonterm s) {
+    start = s;
+    return *this;
+}
+
+Grammar GrammarBuilder::build() const {
+    return Grammar(rules, start);
 }
 
 } // namespace slr_parser

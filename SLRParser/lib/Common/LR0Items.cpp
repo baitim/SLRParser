@@ -6,11 +6,23 @@
 
 namespace slr_parser {
 
+bool Item::operator==(const Item& other) const {
+    return rule_idx == other.rule_idx && dot == other.dot;
+}
+
+bool Item::operator<(const Item& other) const {
+    if (rule_idx != other.rule_idx) return rule_idx < other.rule_idx;
+    return dot < other.dot;
+}
+
 LR0Automaton::LR0Automaton(const Grammar& g) : grammar(g) {
     build();
 }
 
-ItemSet LR0Automaton::closure(const ItemSet& items) {
+const std::vector<ItemSet>& LR0Automaton::getStates() const { return states; }
+const std::map<int, std::map<Symbol, int>>& LR0Automaton::getTransitions() const { return transitions; }
+
+ItemSet LR0Automaton::closure(const ItemSet& items) const {
     ItemSet result = items;
     std::queue<Item> work;
     for (const auto& item : items) work.push(item);
@@ -18,11 +30,12 @@ ItemSet LR0Automaton::closure(const ItemSet& items) {
         Item item = work.front(); work.pop();
         const Rule& rule = grammar.getRules()[item.rule_idx];
         if (item.dot >= static_cast<int>(rule.rhs.size())) continue;
-        int sym = rule.rhs[item.dot];
+        const Symbol& sym = rule.rhs[item.dot];
         if (!is_nonterm(sym)) continue;
+        Nonterm nt = as_nonterm(sym);
         for (size_t i = 0; i < grammar.getRules().size(); ++i) {
             const Rule& r = grammar.getRules()[i];
-            if (r.lhs == sym) {
+            if (r.lhs == nt) {
                 Item new_item{static_cast<int>(i), 0};
                 if (result.insert(new_item).second) {
                     work.push(new_item);
@@ -33,7 +46,7 @@ ItemSet LR0Automaton::closure(const ItemSet& items) {
     return result;
 }
 
-ItemSet LR0Automaton::goTo(const ItemSet& items, int symbol) {
+ItemSet LR0Automaton::goTo(const ItemSet& items, const Symbol& symbol) const {
     ItemSet next;
     for (const auto& item : items) {
         const Rule& rule = grammar.getRules()[item.rule_idx];
@@ -54,14 +67,14 @@ void LR0Automaton::build() {
     work.push(0);
     while (!work.empty()) {
         int state_id = work.front(); work.pop();
-        std::set<int> symbols;
+        std::set<Symbol> symbols;
         for (const auto& item : states[state_id]) {
             const Rule& rule = grammar.getRules()[item.rule_idx];
             if (item.dot < static_cast<int>(rule.rhs.size())) {
                 symbols.insert(rule.rhs[item.dot]);
             }
         }
-        for (int sym : symbols) {
+        for (const Symbol& sym : symbols) {
             ItemSet next_set = goTo(states[state_id], sym);
             if (next_set.empty()) continue;
             int next_id;
