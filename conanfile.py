@@ -17,7 +17,6 @@ class SLRParserRecipe(ConanFile):
     settings = "os", "compiler", "build_type", "arch"
     options = {"shared": [True, False], "fPIC": [True, False]}
     default_options = {"shared": False, "fPIC": True}
-    requires = "flex/2.6.4"
     test_requires = "gtest/1.15.0"
 
     exports_sources = "CMakeLists.txt", "SLRParser/*"
